@@ -130,7 +130,7 @@ class FormanRicci:
 
                 self.G[v1][v2]["formanCurvature"] = w_e * (sum_ef + sum_ve - math.fabs(sum_ehef - sum_veeh))
 
-                logger.debug("Source: %s, target: %d, Forman-Ricci curvature = %f  " % (
+                logger.debug("Source: %s, target: %s, Forman-Ricci curvature = %f  " % (
                     v1, v2, self.G[v1][v2]["formanCurvature"]))
 
         else:
@@ -149,5 +149,5 @@ class FormanRicci:
             else:
                 self.G.nodes[n]['formanCurvature'] = fcsum
 
-            logger.debug("node %d, Forman Curvature = %f" % (n, self.G.nodes[n]['formanCurvature']))
+            logger.debug("node %s, Forman Curvature = %f" % (n, self.G.nodes[n]['formanCurvature']))
         logger.debug("Forman curvature (%s) computation done." % self.method)
