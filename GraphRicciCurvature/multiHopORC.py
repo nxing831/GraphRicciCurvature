@@ -19,10 +19,6 @@ from .util import logger, set_verbose, cut_graph_by_cutoff, get_rf_metric_cutoff
 
 EPSILON = 1e-7  # to prevent divided by zero
 
-'''
-TODO: CREATE GLOBAL WAY TO HANDLE INPUT K
-'''
-
 # ---Shared global variables for multiprocessing used.---
 _Gk = nk.graph.Graph()
 _alpha = 0.5
@@ -42,7 +38,7 @@ _apsp = {}
 
 @lru_cache(_cache_maxsize)
 
-def _get_k_hop_neighbors(node, k):
+def _get_k_hop_neighbors(node, k=1):
     """
     get set of k-hop neighbors of node in a networkit graph
     """
@@ -89,25 +85,21 @@ def _get_single_node_neighbors_distributions(node, direction="successors", k=1):
     if _Gk.isDirected():
         '''
         TODO: 
-        DIRECTED GRAPH CASE GRAPH CASE
+        DIRECTED GRAPH CASE
         '''
         if direction == "predecessors":
             neighbors = list(_Gk.iterInNeighbors(node))
         else:  # successors
             neighbors = list(_Gk.iterNeighbors(node))
     else:
-        neighbors, nbr_tuples, edge_weights = _get_k_hop_neighbors(_Gk, node, k)
-        neighbors = list(neighbors)
         # original: neighbors = list(_Gk.iterNeighbors(node))
+        neighbors, nbr_tuples, edge_weights = _get_k_hop_neighbors(node)
+        neighbors = list(neighbors)
 
     # Get sum of distributions from x's all neighbors
     heap_weight_node_pair = []
-    for tuple in nbr_tuples:
-        # original: for nbr in neighbors
+    for tuple in nbr_tuples: # ORIGINAL: for nbr in neighbors
         '''
-        TODO: OLD VERS cannot search weight by simply doing (nbr, node) since
-        the k-hop is not necessarily directly connected to the node in question
-        
         nbr_tuples are ('src', 'targ')
         edge is dict{('src','targ'): weight, etc.}
         '''
@@ -122,9 +114,14 @@ def _get_single_node_neighbors_distributions(node, direction="successors", k=1):
             # original: w = _base ** (-_Gk.weight(node, nbr) ** _exp_power)
 
         if len(heap_weight_node_pair) < _nbr_topk:
-            heapq.heappush(heap_weight_node_pair, (w, nbr))
+            '''
+            we have to change the heap because the for loop is no longer nbr
+            '''
+            heapq.heappush(heap_weight_node_pair, (w, tuple[1]))
+            # original: heapq.heappush(heap_weight_node_pair, (w, nbr))
         else:
-            heapq.heappushpop(heap_weight_node_pair, (w, nbr))
+             heapq.heappush(heap_weight_node_pair, (w, tuple[1]))
+            # original: heapq.heappushpop(heap_weight_node_pair, (w, nbr))
 
     nbr_edge_weight_sum = sum([x[0] for x in heap_weight_node_pair])
 
@@ -133,6 +130,7 @@ def _get_single_node_neighbors_distributions(node, direction="successors", k=1):
         return [1], [node]
     '''
     TODO: CHECK DISTRIBTION CALCULATION FOR MULTI-HOP NBRS STILL WORKS?
+    EDIT: i think so
     '''
     if nbr_edge_weight_sum > EPSILON:
         # Sum need to be not too small to prevent divided by zero
@@ -310,13 +308,13 @@ def _average_transportation_distance(source, target):
 
     t0 = time.time()
     '''
-    TODO: CHANGE NBR LIST TO K NBRS
+    TODO: CHANGE NBR LIST TO K NBRS FOR DIRECTED GRAPH
     '''
     if _Gk.isDirected():
         print("graph is directed, passing")
         # ORIGINAL: source_nbr = list(_Gk.iterInNeighbors(source))
     else:
-        source_nbr = list(_get_k_hop_neighbors(source)[0]) # currently not passing k
+        source_nbr = list(_get_k_hop_neighbors(source)[0]) # currently not passing k, default k=1
         # ORIGINAL: source_nbr = list(_Gk.iterNeighbors(source))
 
     target_nbr = list(_get_k_hop_neighbors(target)[0]) # 0 is just list of nbrs
@@ -386,11 +384,13 @@ def _compute_ricci_curvature_single_edge(source, target):
 
     # compute Ricci curvature: k=1-(m_{x,y})/d(x,y)
     '''
-    TODO: check if ricci computation is still valid?
-    also weight of source, target : does that work? on single edge src, targ
-    are connected but possibly affected?
+    TODO: check if ricci computation is still valid? EDIT: i think so
+
+    TODO: length of d(src, targ) now cannot be just weight, since not
+    necessarily directly connected
     '''
-    result = 1 - (m / _Gk.weight(source, target))  # Divided by the length of d(i, j)
+    result = 1 - (m / _apsp[source][target]) # shortest path dist
+    # ORIGINGAL: result = 1 - (m / _Gk.weight(source, target))  # Divided by the length of d(i, j)
     logger.debug("Ricci curvature (%s,%s) = %f" % (source, target, result))
 
     return {(source, target): result}
@@ -558,6 +558,7 @@ def _compute_ricci_curvature(G: nx.Graph, weight="weight", **kwargs):
     # Compute node Ricci curvature
     '''
     TODO: AVERAGE OVER ALL K-HOP NBRS AS OPPOSED TO DIRECT?
+    EDIT: i don't think so, no changes made
     '''
     for n in G.nodes():
         rc_sum = 0  # sum of the neighbor Ricci curvature
@@ -572,7 +573,9 @@ def _compute_ricci_curvature(G: nx.Graph, weight="weight", **kwargs):
 
     return G
 
-
+'''
+NOTE: ricci flow unedited
+'''
 def _compute_ricci_flow(G: nx.Graph, weight="weight",
                         iterations=20, step=1, delta=1e-4, surgery=(lambda G, *args, **kwargs: G, 100),
                         **kwargs
@@ -670,7 +673,7 @@ def _compute_ricci_flow(G: nx.Graph, weight="weight",
     return G
 
 
-class OllivierRicci:
+class MultiOllivierRicci:
     """A class to compute Ollivier-Ricci curvature for all nodes and edges in G.
     Node Ricci curvature is defined as the average of all it's adjacency edge.
 
